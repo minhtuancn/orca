@@ -15,6 +15,8 @@ import {
   WorkspacesAction
 } from './FeatureWallSetupWorkflowActions'
 import { ConnectIntegrationsList } from './ConnectIntegrationsList'
+import { CliSection } from '../settings/CliSection'
+import { getRendererAppPlatform } from '@/lib/renderer-app-platform'
 import { BrowserAction } from './FeatureWallBrowserAction'
 import {
   SetupBrowserVisual,
@@ -151,6 +153,9 @@ function SelectedStepAction(props: FeatureWallSetupChecklistProps): React.JSX.El
   if (activeStep.id === 'task-sources') {
     return <TaskSourcesAction />
   }
+  if (activeStep.id === 'cli-setup') {
+    return <CliSetupAction />
+  }
   if (activeStep.id === 'agent-capabilities') {
     return (
       <AgentCapabilitiesSetupAction
@@ -163,6 +168,15 @@ function SelectedStepAction(props: FeatureWallSetupChecklistProps): React.JSX.El
     return <SetupScriptAction />
   }
   return null
+}
+
+// Reuses the Settings CLI section: PATH registration + the orca-cli skill in one place.
+function CliSetupAction(): React.JSX.Element | null {
+  const settings = useAppStore((s) => s.settings)
+  if (!settings) {
+    return null
+  }
+  return <CliSection currentPlatform={getRendererAppPlatform()} settings={settings} />
 }
 
 // Full-width content below the caption/visual grid.
