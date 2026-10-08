@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import type { CliInstallStatus } from '../../../../shared/cli-install-types'
 import { CLI_INSTALL_STATUS_CHANGED_EVENT } from '@/lib/cli-install-status-events'
 
+// Why: readiness gates the whole checklist, so a wedged IPC probe must still settle.
+export const CLI_STATUS_PROBE_SETTLE_TIMEOUT_MS = 15_000
+
 export type CliStatus = {
   cliPathRegistered: boolean
   cliInstallStatusChecked: boolean
@@ -28,11 +31,16 @@ export function useCliStatus(ready: boolean): CliStatus {
 
   useEffect(() => {
     let stale = false
+    let latestRequestId = 0
+    const timeoutId = window.setTimeout(() => setChecked(true), CLI_STATUS_PROBE_SETTLE_TIMEOUT_MS)
     const refreshCliPathStatus = async (): Promise<void> => {
+      const requestId = ++latestRequestId
       const status = await window.api.cli.getInstallStatus().catch(() => null)
-      if (stale) {
+      // Why: focus and status events can overlap probes; only the newest may land.
+      if (stale || requestId !== latestRequestId) {
         return
       }
+      window.clearTimeout(timeoutId)
       setRegistered(isCliPathRegistered(status))
       setChecked(true)
     }
@@ -48,6 +56,7 @@ export function useCliStatus(ready: boolean): CliStatus {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       stale = true
+      window.clearTimeout(timeoutId)
       window.removeEventListener('focus', reprobe)
       window.removeEventListener(CLI_INSTALL_STATUS_CHANGED_EVENT, reprobe)
       document.removeEventListener('visibilitychange', handleVisibilityChange)

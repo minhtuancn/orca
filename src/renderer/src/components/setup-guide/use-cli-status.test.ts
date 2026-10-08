@@ -4,7 +4,11 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CliInstallStatus } from '../../../../shared/cli-install-types'
 import { notifyCliInstallStatusChanged } from '@/lib/cli-install-status-events'
-import { isCliPathRegistered, useCliStatus } from './use-cli-status'
+import {
+  CLI_STATUS_PROBE_SETTLE_TIMEOUT_MS,
+  isCliPathRegistered,
+  useCliStatus
+} from './use-cli-status'
 
 const originalApi = window.api
 
@@ -80,5 +84,41 @@ describe('useCliStatus', () => {
     act(() => notifyCliInstallStatusChanged())
 
     await waitFor(() => expect(result.current.cliPathRegistered).toBe(true))
+  })
+
+  it('settles readiness as unregistered when the probe never answers', async () => {
+    vi.useFakeTimers()
+    try {
+      getInstallStatus.mockReturnValue(new Promise(() => {}))
+      const { result } = renderHook(() => useCliStatus(true))
+      expect(result.current.cliInstallStatusChecked).toBe(false)
+
+      act(() => {
+        vi.advanceTimersByTime(CLI_STATUS_PROBE_SETTLE_TIMEOUT_MS)
+      })
+
+      expect(result.current).toEqual({ cliPathRegistered: false, cliInstallStatusChecked: true })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores an older probe that resolves after a newer one', async () => {
+    let resolveFirst: (status: CliInstallStatus) => void = () => {}
+    getInstallStatus.mockReturnValueOnce(
+      new Promise<CliInstallStatus>((resolve) => {
+        resolveFirst = resolve
+      })
+    )
+    getInstallStatus.mockResolvedValueOnce(makeStatus())
+    const { result } = renderHook(() => useCliStatus(true))
+
+    act(() => notifyCliInstallStatusChanged())
+    await waitFor(() => expect(result.current.cliPathRegistered).toBe(true))
+
+    await act(async () => {
+      resolveFirst(makeStatus({ state: 'not_installed', pathConfigured: false }))
+    })
+    expect(result.current.cliPathRegistered).toBe(true)
   })
 })
